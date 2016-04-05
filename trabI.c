@@ -15,10 +15,10 @@
 #define PIPE_WRITE 1
 
 typedef struct command {
-    char *cmd;              // string apenas com o comando
-    int argc;               // número de argumentos
-    char *argv[MAXARGS+1];  // vector de argumentos do comando
-    struct command *next;   // apontador para o próximo comando
+  char *cmd;              // string apenas com o comando
+  int argc;               // número de argumentos
+  char *argv[MAXARGS+1];  // vector de argumentos do comando
+  struct command *next;   // apontador para o próximo comando
 } COMMAND;
 
 // variáveis globais
@@ -77,15 +77,58 @@ void print_parse(COMMAND* commlist) {
 }
 
 void free_commlist(COMMAND *commlist){
-    // ...
-    // Esta função deverá libertar a memória alocada para a lista ligada.
-    // ...
+  // ...
+  // Esta função deverá libertar a memória alocada para a lista ligada.
+  // ...
+  if(commlist == NULL) return;
+  free_commlist(commlist->next);
+  free(commlist);
 }
 
 void execute_commands(COMMAND *commlist) {
-    // ...
-    // Esta função deverá "executar" a "pipeline" de comandos da lista commlist.
-    // ...
-} 
-
-
+  // ...
+  // Esta função deverá "executar" a "pipeline" de comandos da lista commlist.
+  // ...
+  
+  pid_t pid;
+  
+  if((pid = fork()) < 0) {
+    //Fork error
+  }
+  else if(pid == 0) {
+    //Child code after fork
+    if(inputfile != NULL) {
+      int fd;
+      
+      if((fd = open(inputfile, O_RDONLY)) < 0) {
+	//Error
+	exit(1);
+      }
+      
+      dup2(fd, STDIN_FILENO);
+      close(fd);
+    }
+    
+    if(outputfile != NULL) {
+      int fd;
+      
+      if((fd = open(outputfile, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)) < 0) {
+	//Error
+	exit(1);
+      }
+      
+      dup2(fd, STDOUT_FILENO);
+      close(fd);
+    }
+    
+    if(execvp(commlist->cmd, commlist->argv) < 0) {
+      //execvp error
+      exit(1);
+    }
+  }
+  else {
+    //Parent code after fork
+    if(background_exec == 0)
+      wait(NULL);
+  }
+}
