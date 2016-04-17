@@ -35,10 +35,14 @@ void free_commlist(COMMAND* commlist);
 // include do código do parser da linha de comandos
 #include "parser.c"
 
+void handler(int signal);
+
 int main(int argc, char* argv[]) {
   char *linha;
   COMMAND *com;
 
+  signal(SIGCHLD, handler);
+  
   while (1) {
     if ((linha = readline("my_prompt$ ")) == NULL)
       exit(0);
@@ -85,50 +89,98 @@ void free_commlist(COMMAND *commlist){
   free(commlist);
 }
 
+void handler(int signal) {
+  if(signal == SIGCHLD) 
+    waitpid(-1, NULL, WNOHANG);
+}
+
 void execute_commands(COMMAND *commlist) {
   // ...
   // Esta função deverá "executar" a "pipeline" de comandos da lista commlist.
   // ...
   
-  pid_t pid;
+  //pid_t pid;
+  int n = 0, i;
+  COMMAND *tmp = commlist;
   
-  if((pid = fork()) < 0) {
-    //Fork error
+  while(tmp != NULL) {
+    n++;
+    tmp = tmp->next;
   }
-  else if(pid == 0) {
-    //Child code after fork
-    if(inputfile != NULL) {
-      int fd;
-      
-      if((fd = open(inputfile, O_RDONLY)) < 0) {
-	//Error
+  n--;
+  
+  int fd[n][2];
+  pid_t child[n + 1];
+  
+  i = 0;
+  tmp = commlist;
+  
+  while(tmp != NULL) {
+    if(i < n) {
+      if(pipe(fd[i]) < 0) {
+	//Pipe error
+	//Pipe alert: 0 rd 1 wr
 	exit(1);
       }
-      
-      dup2(fd, STDIN_FILENO);
-      close(fd);
     }
     
-    if(outputfile != NULL) {
-      int fd;
+    if((child[i] = fork()) < 0) {
+      //Fork error
+    }
+    else if(child[i] == 0) {
+      //Child code after fork
+      if(i == 0 && inputfile != NULL) {
+	int fdi;
       
-      if((fd = open(outputfile, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)) < 0) {
-	//Error
-	exit(1);
+	if((fdi = open(inputfile, O_RDONLY)) < 0) {
+	  //Error
+	  exit(1);
+	}
+	
+	dup2(fdi, STDIN_FILENO);
+	close(fdi);
+      }
+     
+      if(i == n && outputfile != NULL) {
+	int fdo;
+	
+	if((fdo = open(outputfile, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)) < 0) {
+	  //Error
+	  exit(1);
+	}
+	
+	dup2(fdo, STDOUT_FILENO);
+	close(fdo);
+      }
+ 
+      if(i < n) {
+	dup2(fd[i][PIPE_WRITE], STDOUT_FILENO);
       }
       
-      dup2(fd, STDOUT_FILENO);
-      close(fd);
+      if(i > 0) {
+	dup2(fd[i - 1][PIPE_READ], STDIN_FILENO);
+	close(fd[i - 1][PIPE_READ]);
+      }
+
+      if(execvp(tmp->cmd, tmp->argv) < 0) {
+	//execvp error
+	exit(1);
+      }
     }
-    
-    if(execvp(commlist->cmd, commlist->argv) < 0) {
-      //execvp error
-      exit(1);
+    else {
+      //Parent code after fork
+      if(fd[i][PIPE_WRITE]) {
+	close(fd[i][PIPE_WRITE]);
+      }
     }
+
+    i++;
+    tmp = tmp->next;
   }
-  else {
-    //Parent code after fork
-    if(background_exec == 0)
-      wait(NULL);
+  
+  if(!background_exec){
+    for(i=0; i<=n; i++){
+      waitpid(child[i], NULL, 0);
+    }
   }
 }
